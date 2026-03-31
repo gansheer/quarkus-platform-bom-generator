@@ -283,33 +283,50 @@ public class ValidateExtensionsJsonMojo extends AbstractMojo {
             return;
         }
 
+        List<String> errors = new ArrayList<>();
+
         if (!(integratesObj instanceof List)) {
-            getLog().warn(
+            throw new MojoExecutionException(
                     "Extension " + ext.getArtifact() + " has invalid 'integrates' metadata: expected a List but got "
                             + integratesObj.getClass().getName());
         }
 
         List<Map<String, String>> integratesList = (List<Map<String, String>>) integratesObj;
-        for (Map<String, String> integrates : integratesList) {
+        for (int i = 0; i < integratesList.size(); i++) {
+            Map<String, String> integrates = integratesList.get(i);
+            String name = integrates.get("name");
             String resolveVersionFrom = integrates.get("resolveVersionFrom");
             String version = integrates.get("version");
 
-            // If resolveVersionFrom is specified but no version was resolved
-            if (resolveVersionFrom != null && !resolveVersionFrom.isEmpty()
-                    && (version == null || version.isEmpty())) {
-                getLog().warn(
-                        "Extension " + ext.getArtifact() + " has incomplete 'integrates' metadata: "
-                                + "resolveVersionFrom='" + resolveVersionFrom + "' but no version was resolved. "
-                                + "This likely means the artifact is not in the BOM.");
+            // Validate that name is present
+            if (name == null || name.isEmpty()) {
+                errors.add("Entry " + i + " is missing required 'name' field: " + integrates);
             }
 
-            // If neither resolveVersionFrom nor version is set
-            if ((resolveVersionFrom == null || resolveVersionFrom.isEmpty())
-                    && (version == null || version.isEmpty())) {
-                getLog().warn(
-                        "Extension " + ext.getArtifact() + " has 'integrates' metadata without version or resolveVersionFrom: "
-                                + integrates);
+            // Validate that either version or resolveVersionFrom is present
+            boolean hasResolveVersionFrom = resolveVersionFrom != null && !resolveVersionFrom.isEmpty();
+            boolean hasVersion = version != null && !version.isEmpty();
+
+            if (!hasResolveVersionFrom && !hasVersion) {
+                errors.add("Entry " + i + " (name='" + name + "') must have either 'version' or 'resolveVersionFrom': "
+                        + integrates);
             }
+
+            // If resolveVersionFrom is specified but no version was resolved
+            if (hasResolveVersionFrom && !hasVersion) {
+                errors.add("Entry " + i + " (name='" + name + "') has 'resolveVersionFrom='" + resolveVersionFrom
+                        + "' but no version was resolved. This likely means the artifact is not in the BOM.");
+            }
+        }
+
+        if (!errors.isEmpty()) {
+            StringBuilder message = new StringBuilder();
+            message.append("Extension ").append(ext.getArtifact())
+                    .append(" has invalid 'integrates' metadata:\n");
+            for (String error : errors) {
+                message.append("  - ").append(error).append("\n");
+            }
+            throw new MojoExecutionException(message.toString());
         }
     }
 }
